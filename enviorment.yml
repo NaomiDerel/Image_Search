@@ -1,0 +1,27 @@
+name: Lab2_env
+channels:
+  - defaults
+  - conda-forge
+dependencies:
+  - python=3.10
+  - numpy
+  - pandas
+  - matplotlib
+  - jupyter
+  - scikit-learn
+  - seaborn
+  - pillow  # For image processing (PIL)
+  - faiss-cpu  # FAISS for approximate nearest neighbors (CPU version)
+  - pytorch  # PyTorch for deep learning
+  - torchvision  # PyTorch computer vision package (depends on PyTorch)
+  - nmslib  # NMSLIB for nearest neighbor search
+  - pip
+  - pip:
+    - lightgbm==2.3.1
+    - catboost==0.20.2
+    - shap==0.35.0
+    - eli5==0.10.1
+    - pdpbox==0.2.0
+    - lime==0.2.0.1  # Adding a version number for LIME
+    - transformers  # Hugging Face Transformers for NLP tasks
+prefix: C:\Users\user\Anaconda3\envs\Lab2_env
