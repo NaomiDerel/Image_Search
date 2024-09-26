@@ -1,1 +1,10 @@
-/datasets/
+## Big data files:
+/datasets/google-landmark-master
+/datasets/house_styles/all_images
+/datasets/house_styles/backup_labels
+
+## Untracked data files:
+/datasets/house_styles/Untracked
+
+## Testing code:
+manual_tagging_script.py
