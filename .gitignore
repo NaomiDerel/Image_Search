@@ -1,4 +1,5 @@
 .DS_Store
+/datasets/house_styles/__MACOSX
 
 ## Big data files:
 /datasets/google-landmark-master
