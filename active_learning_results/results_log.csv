@@ -1,0 +1,2 @@
+round_num, train_accuracy, train_f1, eval_accuracy, eval_f1
+0, 0.8587, 0.5455, 0.6972, 0.0444
