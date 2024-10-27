@@ -284,6 +284,106 @@ def train_siamese_network(model, train_loader, eval_loader, criterion, optimizer
     return model, best_model
 
 
+def train_siamese_network_scheduler(model, train_loader, eval_loader, criterion, optimizer, num_epochs, patience=5):
+    # Learning rate scheduler
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer, mode='min', factor=0.5, patience=2, verbose=True
+    )
+    
+    # Early stopping setup
+    best_loss = float('inf')
+    best_model = None
+    patience_counter = 0
+    
+    # Training history
+    history = {
+        'train_loss': [], 'train_f1': [],
+        'eval_loss': [], 'eval_f1': []
+    }
+    
+    for epoch in range(num_epochs):
+        # Training phase
+        model.train()
+        train_losses = []
+        train_preds = []
+        train_labels = []
+        
+        for img1_path, img2_path, img1, img2, labels in tqdm(train_loader):
+            img1, img2, labels = img1.to(device), img2.to(device), labels.to(device)
+            
+            # Mixed precision training
+            with torch.cuda.amp.autocast():
+                output1, output2 = model(img1, img2)
+                loss = criterion(output1, output2, labels)
+            
+            # Optimization step
+            optimizer.zero_grad()
+            loss.backward()
+            
+            # Gradient clipping
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+            
+            optimizer.step()
+            
+            # Store predictions and losses
+            train_losses.append(loss.item())
+            dist = F.pairwise_distance(output1, output2)
+            preds = (dist < 1.0).float()
+            train_preds.extend(preds.cpu().numpy())
+            train_labels.extend(labels.cpu().numpy())
+        
+        # Evaluation phase
+        model.eval()
+        eval_losses = []
+        eval_preds = []
+        eval_labels = []
+        
+        with torch.no_grad():
+            for img1_path, img2_path, img1, img2, labels in eval_loader:
+                img1, img2, labels = img1.to(device), img2.to(device), labels.to(device)
+                output1, output2 = model(img1, img2)
+                loss = criterion(output1, output2, labels)
+                
+                eval_losses.append(loss.item())
+                dist = F.pairwise_distance(output1, output2)
+                preds = (dist < 1.0).float()
+                eval_preds.extend(preds.cpu().numpy())
+                eval_labels.extend(labels.cpu().numpy())
+        
+        # Calculate metrics
+        train_loss = np.mean(train_losses)
+        train_f1 = f1_score(train_labels, train_preds)
+        eval_loss = np.mean(eval_losses)
+        eval_f1 = f1_score(eval_labels, eval_preds)
+        
+        # Update history
+        history['train_loss'].append(train_loss)
+        history['train_f1'].append(train_f1)
+        history['eval_loss'].append(eval_loss)
+        history['eval_f1'].append(eval_f1)
+        
+        # Learning rate scheduling
+        scheduler.step(eval_loss)
+        
+        # Early stopping check
+        if eval_loss < best_loss:
+            best_loss = eval_loss
+            best_model = model.state_dict()
+            patience_counter = 0
+        else:
+            patience_counter += 1
+            
+        if patience_counter >= patience:
+            print(f"Early stopping triggered at epoch {epoch+1}")
+            break
+            
+        print(f"Epoch [{epoch+1}/{num_epochs}]")
+        print(f"Train Loss: {train_loss:.4f}, Train F1: {train_f1:.4f}")
+        print(f"Eval Loss: {eval_loss:.4f}, Eval F1: {eval_f1:.4f}")
+    
+    return best_model, history
+
+
 def test_siamese_network(model, test_loader, loader_name):
     model.eval()  # Set the model to evaluation mode
     correct = 0
@@ -341,7 +441,8 @@ def test_siamese_network(model, test_loader, loader_name):
 
 def main():
     batch_size = 16
-    num_epochs = 100
+    num_epochs = 150
+    patience = 5
     lr = 0.01
 
     clip_model, clip_processor, augment_transform, eval_transform = load_clip_model()
@@ -355,16 +456,21 @@ def main():
 
     # Train the model
     print("Training the model")
-    trained_model, best_model = train_siamese_network(
-        siamese_net, train_loader, eval_loader, criterion, optimizer, num_epochs)
+    best_model, history = train_siamese_network_scheduler(
+        siamese_net, train_loader, eval_loader, criterion, optimizer, num_epochs, patience)
 
     # Save the best model
     torch.save(best_model, 'active_learning_models/final_model.pth')
+    torch.save(optimizer.state_dict(), 'active_learning_models/final_optimizer.pth')
+    torch.save(history, 'active_learning_models/final_history.pth')
     print("Model saved")
 
     # Evaluate the model
-    test_siamese_network(trained_model, train_loader, "Train")
-    test_siamese_network(trained_model, eval_loader, "Evaluation")
+    loaded_model = ImprovedSiameseNetwork().to(device)
+    loaded_model.load_state_dict(torch.load('active_learning_models/final_model.pth'))
+
+    test_siamese_network(loaded_model, train_loader, "Train")
+    test_siamese_network(loaded_model, eval_loader, "Evaluation")
 
 if __name__ == "__main__":
     main()
