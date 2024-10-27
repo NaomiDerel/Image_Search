@@ -26,12 +26,11 @@ print(f"Using device: {device}")
 
 
 class ImageSimilarityDataset(Dataset):
-    def __init__(self, dataframe, model, processor, transform, augmentations=None):
+    def __init__(self, dataframe, model, processor, transform):
         self.data = dataframe
         self.model = model
         self.processor = processor
         self.transform = transform
-        self.augmentations = augmentations
         self.master_path = ''
 
     def __len__(self):
@@ -46,12 +45,7 @@ class ImageSimilarityDataset(Dataset):
         image1 = Image.open(image1_path).convert("RGB")
         image2 = Image.open(image2_path).convert("RGB")
 
-        # Apply augmentations if provided
-        if self.augmentations:
-            image1 = self.augmentations(image1)
-            image2 = self.augmentations(image2)
-
-        # Apply CLIP transforms if provided (transforms should convert to tensor)
+        # Apply CLIP transforms and augmentations if provided (transforms should convert to tensor)
         if self.transform:
             # Apply transforms including ToTensor
             image1 = self.transform(image1)
@@ -80,13 +74,53 @@ class SiameseNetwork(nn.Module):
         super(SiameseNetwork, self).__init__()
         self.fc1 = nn.Linear(512, 256)
         self.fc2 = nn.Linear(256, 256)
-        self.fc3 = nn.Linear(256, 128)  # Keep larger dimension here
+        self.fc3 = nn.Linear(256, 128)
         self.relu = nn.ReLU()
 
     def forward_one(self, x):
         x = self.relu(self.fc1(x))
         x = self.relu(self.fc2(x))
         x = self.fc3(x)
+        return x
+
+    def forward(self, input1, input2):
+        output1 = self.forward_one(input1)
+        output2 = self.forward_one(input2)
+        return output1, output2
+
+
+class ImprovedSiameseNetwork(nn.Module):
+    def __init__(self, dropout_rate=0.3):
+        super(ImprovedSiameseNetwork, self).__init__()
+        self.network = nn.Sequential(
+            # First block
+            nn.Linear(512, 512),
+            nn.BatchNorm1d(512),
+            nn.ReLU(),
+            nn.Dropout(dropout_rate),
+            
+            # Second block
+            nn.Linear(512, 256),
+            nn.BatchNorm1d(256),
+            nn.ReLU(),
+            nn.Dropout(dropout_rate),
+            
+            # Third block
+            nn.Linear(256, 128),
+            nn.BatchNorm1d(128),
+            nn.ReLU(),
+            nn.Dropout(dropout_rate),
+            
+            # Final projection
+            nn.Linear(128, 64)
+        )
+        
+        # L2 normalization layer
+        self.l2norm = lambda x: F.normalize(x, p=2, dim=1)
+        
+    def forward_one(self, x):
+        x = self.network(x)
+        x = self.l2norm(x)  # L2 normalize embeddings
         return x
 
     def forward(self, input1, input2):
@@ -119,30 +153,30 @@ def load_clip_model():
     processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
 
     # Set up the image transformation pipeline
-    clip_transform = transforms.Compose([
+    eval_transform = transforms.Compose([
         transforms.Resize((128, 128)),
-        transforms.ToTensor(),
-        # transforms.Normalize((0.48145466, 0.4578275, 0.40821073), (0.26862954, 0.26130258, 0.27577711))
+        transforms.ToTensor()
     ])
 
-    # Define the dataset class
-    augmentations = transforms.Compose([
+    augment_transform = transforms.Compose([
+        transforms.Resize((128, 128)),
         # 20% chance of random resized crop
         transforms.RandomApply([transforms.RandomResizedCrop(224)], p=0.3),
         # 20% chance of horizontal flip
         transforms.RandomApply([transforms.RandomHorizontalFlip()], p=0.3),
         transforms.RandomApply([transforms.ColorJitter(
             brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1)], p=0.3),  # 20% chance of color jitter
-        transforms.ToTensor(),  # Always apply ToTensor
+        transforms.ToTensor()  # Always apply ToTensor
     ])
 
-    return model, processor, clip_transform, augmentations
+    return model, processor, augment_transform, eval_transform
 
 
-def load_data(clip_model, clip_processor, transform, augmentations, batch_size=8, train_ratio=0.8):
+def load_data(clip_model, clip_processor, augment_transform, eval_transform, batch_size=8, train_ratio=0.8):
 
     total_rounds = 4
     base_path = 'active_learning_labels/'
+    full_data_paths = pd.DataFrame()
 
     for i in range(0, total_rounds):
         path = base_path + 'round_' + str(i) + '.csv'
@@ -151,6 +185,7 @@ def load_data(clip_model, clip_processor, transform, augmentations, batch_size=8
         print(f"Round {i} data loaded")
 
     data_paths = full_data_paths[['image1_path', 'image2_path', 'similarity']]
+    print("Found", len(data_paths), "tagged image pairs")
 
     # split the data into training and testing
     train_data = data_paths.sample(frac=train_ratio, random_state=42)
@@ -158,9 +193,9 @@ def load_data(clip_model, clip_processor, transform, augmentations, batch_size=8
 
     # Create datasets
     train_dataset = ImageSimilarityDataset(
-        train_data, clip_model, clip_processor, transform=transform, augmentations=None)
+        train_data, clip_model, clip_processor, transform=augment_transform)
     eval_dataset = ImageSimilarityDataset(
-        eval_data, clip_model, clip_processor, transform=transform, augmentations=None)
+        eval_data, clip_model, clip_processor, transform=eval_transform)
 
     # Create DataLoaders
     train_loader = DataLoader(
@@ -305,25 +340,31 @@ def test_siamese_network(model, test_loader, loader_name):
 
 
 def main():
-    batch_size = 8
+    batch_size = 16
     num_epochs = 100
     lr = 0.01
 
-    clip_model, clip_processor, clip_transform, augmentations = load_clip_model()
+    clip_model, clip_processor, augment_transform, eval_transform = load_clip_model()
     train_loader, eval_loader = load_data(
-        clip_model, clip_processor, clip_transform, augmentations, batch_size=8, train_ratio=0.8)
+        clip_model, clip_processor, augment_transform, eval_transform, batch_size, train_ratio=0.8)
+    print("Data loaded")
 
-    siamese_net = SiameseNetwork().to(device)
+    siamese_net = ImprovedSiameseNetwork().to(device)
     criterion = ContrastiveLoss(margin=1.0)
     optimizer = optim.Adam(siamese_net.parameters(), lr)
 
     # Train the model
+    print("Training the model")
     trained_model, best_model = train_siamese_network(
         siamese_net, train_loader, eval_loader, criterion, optimizer, num_epochs)
 
     # Save the best model
     torch.save(best_model, 'active_learning_models/final_model.pth')
+    print("Model saved")
 
     # Evaluate the model
     test_siamese_network(trained_model, train_loader, "Train")
     test_siamese_network(trained_model, eval_loader, "Evaluation")
+
+if __name__ == "__main__":
+    main()
