@@ -89,9 +89,9 @@ class SiameseNetwork(nn.Module):
         return output1, output2
 
 
-class ImprovedSiameseNetwork(nn.Module):
+class NormSiameseNetwork(nn.Module):
     def __init__(self, dropout_rate=0.1):
-        super(ImprovedSiameseNetwork, self).__init__()
+        super(NormSiameseNetwork, self).__init__()
         self.network = nn.Sequential(
             # First block
             nn.Linear(512, 256),
@@ -443,7 +443,7 @@ def main():
         clip_model, clip_processor, augment_transform, eval_transform, batch_size, train_ratio=0.8)
     print("Data loaded")
 
-    siamese_net = ImprovedSiameseNetwork().to(device)
+    siamese_net = NormSiameseNetwork().to(device)
     criterion = ContrastiveLoss(margin=1.0)
     optimizer = optim.Adam(siamese_net.parameters(), lr)
 
@@ -459,7 +459,7 @@ def main():
     # print("Model saved")
 
     # Evaluate the model
-    loaded_model = ImprovedSiameseNetwork().to(device)
+    loaded_model = NormSiameseNetwork().to(device)
     loaded_model.load_state_dict(torch.load('active_learning_models/final_best_model.pth'))
 
     test_siamese_network(loaded_model, train_loader, "Train")
