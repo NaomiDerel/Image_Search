@@ -73,13 +73,13 @@ class SiameseNetwork(nn.Module):
     def __init__(self):
         super(SiameseNetwork, self).__init__()
         self.fc1 = nn.Linear(512, 256)
-        self.fc2 = nn.Linear(256, 256)
+        # self.fc2 = nn.Linear(256, 256)
         self.fc3 = nn.Linear(256, 128)
         self.relu = nn.ReLU()
 
     def forward_one(self, x):
         x = self.relu(self.fc1(x))
-        x = self.relu(self.fc2(x))
+        # x = self.relu(self.fc2(x))
         x = self.fc3(x)
         return x
 
@@ -90,37 +90,27 @@ class SiameseNetwork(nn.Module):
 
 
 class ImprovedSiameseNetwork(nn.Module):
-    def __init__(self, dropout_rate=0.3):
+    def __init__(self, dropout_rate=0.1):
         super(ImprovedSiameseNetwork, self).__init__()
         self.network = nn.Sequential(
             # First block
-            nn.Linear(512, 512),
-            nn.BatchNorm1d(512),
+            nn.Linear(512, 256),
+            # nn.BatchNorm1d(256),
             nn.ReLU(),
             nn.Dropout(dropout_rate),
             
             # Second block
-            nn.Linear(512, 256),
-            nn.BatchNorm1d(256),
-            nn.ReLU(),
-            nn.Dropout(dropout_rate),
+            # nn.Linear(256, 256),
+            # nn.BatchNorm1d(256),
+            # nn.ReLU(),
+            # nn.Dropout(dropout_rate),
             
             # Third block
-            nn.Linear(256, 128),
-            nn.BatchNorm1d(128),
-            nn.ReLU(),
-            nn.Dropout(dropout_rate),
-            
-            # Final projection
-            nn.Linear(128, 64)
+            nn.Linear(256, 128)
         )
-        
-        # L2 normalization layer
-        self.l2norm = lambda x: F.normalize(x, p=2, dim=1)
         
     def forward_one(self, x):
         x = self.network(x)
-        x = self.l2norm(x)  # L2 normalize embeddings
         return x
 
     def forward(self, input1, input2):
@@ -150,7 +140,7 @@ class ContrastiveLoss(torch.nn.Module):
 def load_clip_model():
     # Load the pretrained CLIP model and processor from Hugging Face
     model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32")
-    processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
+    processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32", do_rescale=False)
 
     # Set up the image transformation pipeline
     eval_transform = transforms.Compose([
@@ -160,12 +150,10 @@ def load_clip_model():
 
     augment_transform = transforms.Compose([
         transforms.Resize((128, 128)),
-        # 20% chance of random resized crop
         transforms.RandomApply([transforms.RandomResizedCrop(224)], p=0.3),
-        # 20% chance of horizontal flip
         transforms.RandomApply([transforms.RandomHorizontalFlip()], p=0.3),
         transforms.RandomApply([transforms.ColorJitter(
-            brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1)], p=0.3),  # 20% chance of color jitter
+            brightness=0.2, contrast=0.2, saturation=0.2, hue=0.0)], p=0.3),
         transforms.ToTensor()  # Always apply ToTensor
     ])
 
@@ -205,8 +193,8 @@ def load_data(clip_model, clip_processor, augment_transform, eval_transform, bat
     return train_loader, eval_loader
 
 
-def train_siamese_network(model, train_loader, eval_loader, criterion, optimizer, num_epochs):
-    Evaluate_Flag = False
+def train_siamese_network(model, train_loader, eval_loader, criterion, optimizer, num_epochs, try_num):
+    Evaluate_Flag = True
     model.train()  # Set the model to training mode
     max_train_f1 = 0
     max_eval_f1 = 0
@@ -218,7 +206,7 @@ def train_siamese_network(model, train_loader, eval_loader, criterion, optimizer
         correct = 0
         tp, fp, tn, fn = 0, 0, 0, 0
 
-        for i, (img1_path, img2_path, img1, img2, labels) in tqdm(enumerate(train_loader)):
+        for img1_path, img2_path, img1, img2, labels in tqdm(train_loader):
             # Move tensors to the appropriate device
             img1, img2, labels = img1.to(device), img2.to(
                 device), labels.to(device)
@@ -249,7 +237,8 @@ def train_siamese_network(model, train_loader, eval_loader, criterion, optimizer
         f1 = 2 * tp / (2 * tp + fp + fn)
         print(f"Epoch [{epoch + 1}/{num_epochs}], Loss: {running_loss / len(train_loader):.4f}, Train Accuracy: {correct / len(train_loader.dataset):.2f}, Train F1 Score: {f1:.2f}")
 
-        # Save best model:
+        with open(f'active_learning_results/log_try_{try_num}.txt', 'a') as f:
+            f.write(f"Epoch [{epoch + 1}/{num_epochs}], Loss: {running_loss / len(train_loader):.4f}, Train Accuracy: {correct / len(train_loader.dataset):.2f}, Train F1 Score: {f1:.2f}\n")
 
         if not Evaluate_Flag and f1 >= max_train_f1:
             max_train_f1 = f1
@@ -274,11 +263,14 @@ def train_siamese_network(model, train_loader, eval_loader, criterion, optimizer
 
             eval_f1 = 2 * tp / (2 * tp + fp + fn)
             print(f"Evaluation F1: {eval_f1:.2f}")
+            with open(f'active_learning_results/log_try_{try_num}.txt', 'a') as f:
+                f.write(f"Evaluation F1: {eval_f1:.2f}\n")
 
             # Save the model with the best evaluation accuracy
             if eval_f1 >= max_eval_f1:
                 max_eval_f1 = eval_f1
                 best_model = model.state_dict()
+                torch.save(best_model, 'active_learning_models/final_best_model.pth')
                 print("Best model updated")
 
     return model, best_model
@@ -311,10 +303,9 @@ def train_siamese_network_scheduler(model, train_loader, eval_loader, criterion,
         for img1_path, img2_path, img1, img2, labels in tqdm(train_loader):
             img1, img2, labels = img1.to(device), img2.to(device), labels.to(device)
             
-            # Mixed precision training
-            with torch.cuda.amp.autocast():
-                output1, output2 = model(img1, img2)
-                loss = criterion(output1, output2, labels)
+            
+            output1, output2 = model(img1, img2)
+            loss = criterion(output1, output2, labels)
             
             # Optimization step
             optimizer.zero_grad()
@@ -369,13 +360,13 @@ def train_siamese_network_scheduler(model, train_loader, eval_loader, criterion,
         if eval_loss < best_loss:
             best_loss = eval_loss
             best_model = model.state_dict()
-            patience_counter = 0
-        else:
-            patience_counter += 1
+            # patience_counter = 0
+       # else:
+        #     patience_counter += 1
             
-        if patience_counter >= patience:
-            print(f"Early stopping triggered at epoch {epoch+1}")
-            break
+        # if patience_counter >= patience:
+        #     print(f"Early stopping triggered at epoch {epoch+1}")
+        #     break
             
         print(f"Epoch [{epoch+1}/{num_epochs}]")
         print(f"Train Loss: {train_loss:.4f}, Train F1: {train_f1:.4f}")
@@ -436,12 +427,14 @@ def test_siamese_network(model, test_loader, loader_name):
     plt.title(f"{loader_name} Confusion Matrix")
     plt.xlabel('Predicted labels')
     plt.ylabel('True labels')
-    plt.show()
+    
+    # Save the confusion matrix
+    plt.savefig(f'active_learning_results/final_{loader_name}.png')
 
 
 def main():
     batch_size = 16
-    num_epochs = 150
+    num_epochs = 100
     patience = 5
     lr = 0.01
 
@@ -455,19 +448,19 @@ def main():
     optimizer = optim.Adam(siamese_net.parameters(), lr)
 
     # Train the model
-    print("Training the model")
-    best_model, history = train_siamese_network_scheduler(
-        siamese_net, train_loader, eval_loader, criterion, optimizer, num_epochs, patience)
+    # print("Training the model")
+    # # best_model, history = train_siamese_network_scheduler(siamese_net, train_loader, eval_loader, criterion, optimizer, num_epochs, patience)
+    # trained_model, best_model = train_siamese_network(siamese_net, train_loader, eval_loader, criterion, optimizer, num_epochs, try_num=1)
 
-    # Save the best model
-    torch.save(best_model, 'active_learning_models/final_model.pth')
-    torch.save(optimizer.state_dict(), 'active_learning_models/final_optimizer.pth')
-    torch.save(history, 'active_learning_models/final_history.pth')
-    print("Model saved")
+    # # Save the best model
+    # torch.save(best_model, 'active_learning_models/final_best_model.pth')
+    # torch.save(optimizer.state_dict(), 'active_learning_models/final_optimizer.pth')
+    # torch.save(trained_model, 'active_learning_models/final_trained_model.pth')
+    # print("Model saved")
 
     # Evaluate the model
     loaded_model = ImprovedSiameseNetwork().to(device)
-    loaded_model.load_state_dict(torch.load('active_learning_models/final_model.pth'))
+    loaded_model.load_state_dict(torch.load('active_learning_models/final_best_model.pth'))
 
     test_siamese_network(loaded_model, train_loader, "Train")
     test_siamese_network(loaded_model, eval_loader, "Evaluation")
