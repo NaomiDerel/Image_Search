@@ -1,3 +1,21 @@
+"""
+This module implements a Siamese Network for image similarity using the CLIP model for feature extraction.
+Classes:
+    ImageSimilarityDataset: Custom dataset class for loading image pairs and their similarity labels.
+    SiameseNetwork: Defines the architecture of the Siamese Network as used in Active Learning.
+    NormSiameseNetwork: Defines a normalized version of the Siamese Network with dropout for a retrospectively-trained model.
+    ContrastiveLoss: Custom loss function for training the Siamese Network.
+Functions:
+    load_clip_model: Loads the pretrained CLIP model and processor, and sets up image transformation pipelines.
+    load_data: Loads and preprocesses the dataset, splits it into training and evaluation sets, and creates DataLoaders.
+    train_siamese_network: Trains the Siamese Network using the provided DataLoader, criterion, and optimizer.
+    train_siamese_network_scheduler: Trains the Siamese Network with a learning rate scheduler and early stopping.
+    test_siamese_network: Evaluates the trained Siamese Network on a test dataset and prints accuracy, F1 score, and confusion matrix.
+    main: Main function to load data, train the model, and evaluate the model.
+Usage:
+    Run the script to train and evaluate a Siamese Network for image similarity.
+"""
+
 import os
 import pandas as pd
 import numpy as np
@@ -14,7 +32,6 @@ import torch.nn.functional as F
 from transformers import CLIPModel, CLIPProcessor
 from sklearn.metrics import f1_score, confusion_matrix
 
-
 if torch.cuda.is_available():
     device = torch.device('cuda')
 # elif torch.backends.mps.is_available():
@@ -26,6 +43,8 @@ print(f"Using device: {device}")
 
 
 class ImageSimilarityDataset(Dataset):
+    """ As shown in active_learning_pipeline.ipynb """
+
     def __init__(self, dataframe, model, processor, transform):
         self.data = dataframe
         self.model = model
@@ -70,6 +89,8 @@ class ImageSimilarityDataset(Dataset):
 
 
 class SiameseNetwork(nn.Module):
+    """ As shown in active_learning_pipeline.ipynb """
+
     def __init__(self):
         super(SiameseNetwork, self).__init__()
         self.fc1 = nn.Linear(512, 256)
@@ -90,20 +111,44 @@ class SiameseNetwork(nn.Module):
 
 
 class NormSiameseNetwork(nn.Module):
+    """
+    A Siamese Network with normalization layers for comparing pairs of inputs, attempted to retrospectively train the model post active learning. This model did not show significant improvement over the original Siamese Network.
+
+    Args:
+        dropout_rate (float): The dropout rate to be applied after each ReLU activation. Default is 0.1.
+    Attributes:
+        network (nn.Sequential): The sequential container of layers forming the network.
+    Methods:
+        forward_one(x):
+            Passes a single input through the network.
+            Args:
+                x (torch.Tensor): The input tensor.
+            Returns:
+                torch.Tensor: The output tensor after passing through the network.
+        forward(input1, input2):
+            Passes two inputs through the network and returns their respective outputs.
+            Args:
+                input1 (torch.Tensor): The first input tensor.
+                input2 (torch.Tensor): The second input tensor.
+            Returns:
+                tuple: A tuple containing the outputs for input1 and input2.
+    """
+
+
     def __init__(self, dropout_rate=0.1):
         super(NormSiameseNetwork, self).__init__()
         self.network = nn.Sequential(
             # First block
             nn.Linear(512, 256),
-            # nn.BatchNorm1d(256),
+            nn.BatchNorm1d(256),
             nn.ReLU(),
             nn.Dropout(dropout_rate),
             
             # Second block
-            # nn.Linear(256, 256),
-            # nn.BatchNorm1d(256),
-            # nn.ReLU(),
-            # nn.Dropout(dropout_rate),
+            nn.Linear(256, 256),
+            nn.BatchNorm1d(256),
+            nn.ReLU(),
+            nn.Dropout(dropout_rate),
             
             # Third block
             nn.Linear(256, 128)
@@ -121,9 +166,7 @@ class NormSiameseNetwork(nn.Module):
 
 # define the loss function
 class ContrastiveLoss(torch.nn.Module):
-    """
-    Contrastive loss function.
-    """
+    """ As shown in active_learning_pipeline.ipynb """
 
     def __init__(self, margin=1.0):
         super(ContrastiveLoss, self).__init__()
@@ -138,6 +181,8 @@ class ContrastiveLoss(torch.nn.Module):
 
 
 def load_clip_model():
+    """ Based on code shown in active_learning_pipeline.ipynb """
+
     # Load the pretrained CLIP model and processor from Hugging Face
     model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32")
     processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32", do_rescale=False)
@@ -161,6 +206,7 @@ def load_clip_model():
 
 
 def load_data(clip_model, clip_processor, augment_transform, eval_transform, batch_size=8, train_ratio=0.8):
+    """ Based on code shown in active_learning_pipeline.ipynb """
 
     total_rounds = 4
     base_path = 'active_learning_labels/'
@@ -194,8 +240,10 @@ def load_data(clip_model, clip_processor, augment_transform, eval_transform, bat
 
 
 def train_siamese_network(model, train_loader, eval_loader, criterion, optimizer, num_epochs, try_num):
+    """ Based on code shown in active_learning_pipeline.ipynb """
+
     Evaluate_Flag = True
-    model.train()  # Set the model to training mode
+    model.train()
     max_train_f1 = 0
     max_eval_f1 = 0
     best_model = None
@@ -276,7 +324,23 @@ def train_siamese_network(model, train_loader, eval_loader, criterion, optimizer
     return model, best_model
 
 
-def train_siamese_network_scheduler(model, train_loader, eval_loader, criterion, optimizer, num_epochs, patience=5):
+def train_siamese_network_scheduler(model, train_loader, eval_loader, criterion, optimizer, num_epochs, patience=10):
+    """
+    Trains a Siamese network with the addition of a learning rate scheduler and early stopping.
+    Args:
+        model (torch.nn.Module): The Siamese network model to be trained.
+        train_loader (torch.utils.data.DataLoader): DataLoader for the training dataset.
+        eval_loader (torch.utils.data.DataLoader): DataLoader for the evaluation dataset.
+        criterion (callable): Loss function to be used.
+        optimizer (torch.optim.Optimizer): Optimizer for updating the model parameters.
+        num_epochs (int): Number of epochs to train the model.
+        patience (int, optional): Number of epochs with no improvement after which training will be stopped. Default is 5.
+    Returns:
+        tuple: A tuple containing:
+            - best_model (dict): The state dictionary of the best model.
+            - history (dict): A dictionary containing training and evaluation loss and F1 score history.
+    """
+
     # Learning rate scheduler
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(
         optimizer, mode='min', factor=0.5, patience=2, verbose=True
@@ -360,13 +424,13 @@ def train_siamese_network_scheduler(model, train_loader, eval_loader, criterion,
         if eval_loss < best_loss:
             best_loss = eval_loss
             best_model = model.state_dict()
-            # patience_counter = 0
-       # else:
-        #     patience_counter += 1
+            patience_counter = 0
+        else:
+            patience_counter += 1
             
-        # if patience_counter >= patience:
-        #     print(f"Early stopping triggered at epoch {epoch+1}")
-        #     break
+        if patience_counter >= patience:
+            print(f"Early stopping triggered at epoch {epoch+1}")
+            break
             
         print(f"Epoch [{epoch+1}/{num_epochs}]")
         print(f"Train Loss: {train_loss:.4f}, Train F1: {train_f1:.4f}")
@@ -376,7 +440,9 @@ def train_siamese_network_scheduler(model, train_loader, eval_loader, criterion,
 
 
 def test_siamese_network(model, test_loader, loader_name):
-    model.eval()  # Set the model to evaluation mode
+    """ Based on code shown in active_learning_pipeline.ipynb """
+
+    model.eval()
     correct = 0
     total = 0
     all_labels = []
@@ -448,15 +514,14 @@ def main():
     optimizer = optim.Adam(siamese_net.parameters(), lr)
 
     # Train the model
-    # print("Training the model")
-    # # best_model, history = train_siamese_network_scheduler(siamese_net, train_loader, eval_loader, criterion, optimizer, num_epochs, patience)
-    # trained_model, best_model = train_siamese_network(siamese_net, train_loader, eval_loader, criterion, optimizer, num_epochs, try_num=1)
+    print("Training the model")
+    # best_model, history = train_siamese_network_scheduler(siamese_net, train_loader, eval_loader, criterion, optimizer, num_epochs, patience)
+    trained_model, best_model = train_siamese_network(siamese_net, train_loader, eval_loader, criterion, optimizer, num_epochs, try_num=1)
 
-    # # Save the best model
-    # torch.save(best_model, 'active_learning_models/final_best_model.pth')
-    # torch.save(optimizer.state_dict(), 'active_learning_models/final_optimizer.pth')
-    # torch.save(trained_model, 'active_learning_models/final_trained_model.pth')
-    # print("Model saved")
+    # Save the best model
+    torch.save(optimizer.state_dict(), 'active_learning_models/final_optimizer.pth')
+    torch.save(trained_model, 'active_learning_models/final_trained_model.pth')
+    print("Model saved")
 
     # Evaluate the model
     loaded_model = NormSiameseNetwork().to(device)

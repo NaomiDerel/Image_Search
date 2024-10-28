@@ -8,6 +8,8 @@
 
 ## Untracked data files:
 /datasets/house_styles/Untracked
+active_learning_results/log_try_1.txt
 
 ## Testing code:
 manual_tagging_script.py
+
