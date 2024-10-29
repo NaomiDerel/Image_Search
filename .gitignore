@@ -1,5 +1,6 @@
 .DS_Store
 /datasets/house_styles/__MACOSX
+/__pycache__
 
 ## Big data files:
 /datasets/google-landmark-master
