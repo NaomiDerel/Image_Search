@@ -24,6 +24,10 @@ conda env create -f environment.yml
 
 Or run on the provided Azure Machine for the course, with kernel `azureml_py310_sdkv2 (Python 3.10.15)`.
 
+## Example Usage
+
+To run the full retrieval pipeline, run the 'pipeline.py' script with a desired query image and k value for the top k retrieved images. The script can create the vector database from scratch or load a pre-existing one.
+
 ## Datasets
 
 Download the house styles dataset from [Kaggle](https://www.kaggle.com/datasets/kelvingothman/house-typestyle-detection) - to access the `all_images` folder containing the .jpg files.
