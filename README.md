@@ -22,29 +22,37 @@ The required packages for the project can be imported by creating a new environm
 conda env create -f environment.yml
 ```
 
-Or run on Azure Machine with kernel `azureml_py38`.
+Or run on the provided Azure Machine for the course, with kernel `azureml_py310_sdkv2 (Python 3.10.15)`.
 
 ## Datasets
 
 Download the house styles dataset from [Kaggle](https://www.kaggle.com/datasets/kelvingothman/house-typestyle-detection) - to access the `all_images` folder containing the .jpg files.
 
-Our contribution to the data is in the labeling of pairs of images by similarity, acquired both from `data_tagging.ipynb` and our manual work.
-
-As described in `data_tagging.ipynb`, we sampled 150 images from each class, 450 overall. The sampled images are those in the `sampled_labels.csv` file, and all the pairs of images with similarity labels are in the `sampled_paired_labels_shuffled.csv` file. The similarity labels in this file could be null, automatically 0 due to different classes, or 1 through 3 for manually labeled pairs during active learning.
 
 The expected data configuration is then:
 ```
 |- datasets
     |- house_styles
         |- all_images
+        evaluation_paired_labels.csv
         labels.csv
         sampled_labels.csv
         sampled_paired_labels_shuffled.csv
 ```
 
-A blind test set, independent of the model's selection, is also provided in `active_learning_labels` folder.
+The process of creating the paired dataset is described in the `data_tagging.ipynb` notebook.
 
-Additional tagged data can be found in `evaluation_paired_labels.csv`, used to evaluate the model's performance by the retrieved pairs.
+### Contributed Dataset
+
+
+Our contribution to the data is in the labeling of pairs of images by similarity, acquired through a combination of automatic and manual labeling. The similarity labels are null, 0 if the houses are in different classes, or 1 through 3 for manually labeled pairs during active learning with 3 being the most similar.
+
+We offer the following data:
+- Full paired dataset (all possible pairs of images from sample), with partial labels, is stored in the `sampled_paired_labels_shuffled.csv` file. These labels were used as training and validation data, influenced in selection by the model in the active learning process.
+- A blind test set, not influenced by the model selection, is stored in the `active_learning_labels/blind_test.csv` file.
+- Lastly, to evaluate the retrieval model, the top k=5 retrieved images of 50 query images were fully tagged to avoid missing relevant pairs. This data is stored in `datasets/house_styles/evaluation_paired_labels.csv`.
+
+For future work with this dataset, be advised of the correlation in the chosen images for the data, and select the relevant files for the task at hand.
 
 
 ## Models
@@ -59,10 +67,10 @@ The embedding model is a Siamese Network, fine tuned from CLIP embeddings using 
 
 The active learning process is implemented in `active_learning_pipeline.ipynb`. The process of active learning - trained model, data samples to tag, and results from each round - is logged in `active_learning_models`, `active_learning_labels`, and `active_learning_results` folders, respectively.
 
-### Retrieval Model - FAISS
+### Retrieval Model - FAISS Index
 
 The retrieval model is based on FAISS, a library for efficient similarity search and clustering of dense vectors. Analysis and comparison of ANN methods are in `ann_evaluation.ipynb`, and saved vector databases for embedded indexes can be found in the `vector_dbs` folder.
 
 ## Evaluation
 
-In addition to other results shown in the notebook, the folder `report_results` contains code and figures as shown in the report.
+In addition to other results shown in the previous notebooks, the folder `report_results` contains code and figures as shown in the report.
