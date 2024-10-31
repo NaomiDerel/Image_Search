@@ -281,9 +281,9 @@ def main():
             image_names, clip_model, clip_processor, clip_transform, siamese_model, image_folder=image_folder)
     else:
         clip_vectors = np.load(
-            "vector_dbs/random_queries/vectors_index_clip.npy")
+            "vector_dbs/full_index/vectors_index_clip.npy")
         siamese_vectors = np.load(
-            "vector_dbs/random_queries/vectors_index_siamese.npy")
+            "vector_dbs/full_index/vectors_index_siamese.npy")
 
     # Create Faiss index for models
     dim_clip = clip_vectors.shape[1]
@@ -293,9 +293,9 @@ def main():
     index_clip = build_faiss_hnsw_index(clip_vectors, dim_clip, nlinks)
     index_siamese = build_faiss_hnsw_index(siamese_vectors, dim_siamese, nlinks)
 
-    # Query image
-    # 177_87458f86.jpg, 553_f514f73f.jpg, 406_3c50af9c.jpg, 441_c1205bad.jpg
-    query_image_name = "553_f514f73f.jpg"  # select a query image of interest
+    #### Select a query image of interest:
+    # Examples: 553_f514f73f.jpg, 441_c1205bad.jpg, 001_d2c7428a.jpg
+    query_image_name = "267_4433e7a0.jpg"  
     query_image_path = os.path.join(image_folder, query_image_name)
 
     # Load and preprocess the query image
@@ -306,23 +306,23 @@ def main():
     query_image_vector_siamese = get_image_vector_siamese(query_image_tensor, clip_model, clip_processor, siamese_model)
 
     # Perform Faiss search
-    k = 3  # no more than 15 for clear plots
+    k = 5  # no more than 15 for clear plots
     clip_indices = faiss_search(
-        query_image_vector_clip.reshape(1, -1), index_clip, k)
+        query_image_vector_clip.reshape(1, -1), index_clip, k+1)[0][1:] # exclude the query image itself
     siamese_indices = faiss_search(
-        query_image_vector_siamese.reshape(1, -1), index_siamese, k)
+        query_image_vector_siamese.reshape(1, -1), index_siamese, k+1)[0][1:] # exclude the query image itself
     
     print(siamese_indices)
 
     # Save retrieved image names
     clip_images = [Image.open(os.path.join(
-        image_folder, image_names[i])) for i in clip_indices[0]]
+        image_folder, image_names[i])) for i in clip_indices]
     siamese_images = [Image.open(os.path.join(
-        image_folder, image_names[i])) for i in siamese_indices[0]]
+        image_folder, image_names[i])) for i in siamese_indices]
     
     print("Query Image:", query_image_name)
-    print("CLIP Results:", [image_names[i] for i in clip_indices[0]])
-    print("Siamese Results:", [image_names[i] for i in siamese_indices[0]])
+    print("CLIP Results:", [image_names[i] for i in clip_indices])
+    print("Siamese Results:", [image_names[i] for i in siamese_indices])
 
     # Display the results
     query_image = Image.open(query_image_path)
