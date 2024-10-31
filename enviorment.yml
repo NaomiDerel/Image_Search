@@ -14,7 +14,8 @@ dependencies:
   - faiss-cpu  # FAISS for approximate nearest neighbors (CPU version)
   - pytorch  # PyTorch for deep learning
   - torchvision  # PyTorch computer vision package (depends on PyTorch)
-  - nmslib  # NMSLIB for nearest neighbor search
+  # - nmslib  # NMSLIB for nearest neighbor search
+  - tqdm
   - pip
   - pip:
     - lightgbm==2.3.1
