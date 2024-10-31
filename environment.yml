@@ -25,4 +25,6 @@ dependencies:
     - pdpbox==0.2.0
     - lime==0.2.0.1  # Adding a version number for LIME
     - transformers  # Hugging Face Transformers for NLP tasks
+    - faiss-cpu
+    - faiss-gpu
 prefix: C:\Users\user\Anaconda3\envs\Lab2_env
