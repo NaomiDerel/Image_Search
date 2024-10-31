@@ -1,3 +1,20 @@
+"""
+This script implements a complete image search pipeline, using saved CLIP and Siamese network models. It demonstrates all the functionalities of our work, excluding training.
+
+Classes:
+- SiameseNetworkEmbedder: A neural network model for generating image embeddings using a Siamese network architecture.
+Functions:
+- load_models(best_model_path): Loads and initializes the necessary models and transformations for the image search pipeline.
+- load_and_preprocess_image(image_path, clip_transform): Loads an image from the specified file path and preprocesses it for use with the CLIP model.
+- get_image_vector_clip(image_tensor, clip_model, clip_processor): Generates a feature vector for a given image tensor using the CLIP model.
+- get_image_vector_siamese(image_tensor, clip_model, clip_processor, siamese_model): Generates an image embedding vector using a Siamese model.
+- embed_image_vectors(image_names, clip_model, clip_processor, clip_transform, siamese_model, image_folder): Processes a list of image names, extracts feature vectors using two different models (CLIP and Siamese), and saves the resulting vectors to .npy files.
+- build_faiss_hnsw_index(index_vectors, dim, nlinks): Builds a Faiss HNSW index.
+- faiss_search(query_vectors, index, k): Uses a Faiss index to search for the k-nearest neighbors of query_vectors.
+- plot_example(query_image, clip_images, siamese_images, k): Plots the query image along with the retrieval results from Siamese and CLIP models.
+- main(): The main function that orchestrates the image search pipeline.
+"""
+
 import os
 from PIL import Image
 import torch
