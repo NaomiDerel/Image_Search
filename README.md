@@ -1,6 +1,6 @@
 # Image_Search
 
-A project for Data Analysis and Visualization Lab course, implementing a retrieval pipeline for image search using ANN, and tests of the effect of fine-tuning the similarity metric with Active Learning methods.
+A project for Data Analysis and Visualization Lab course, implementing a retrieval pipeline for image search using ANN, and tests of the effect of fine-tuning the similarity metric with Active Learning methods. Read our full [report](https://github.com/NaomiDerel/Image_Search/blob/main/Image_Search_Report.pdf) here.
 
 ## Goal
 
